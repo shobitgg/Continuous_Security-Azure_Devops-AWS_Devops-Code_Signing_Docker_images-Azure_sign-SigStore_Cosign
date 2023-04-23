@@ -1,0 +1,77 @@
+trigger:
+- none
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+steps:
+- task: AzureKeyVault@2
+  inputs:
+    azureSubscription: 'Kyndryl course Modernops'
+    KeyVaultName: 'petstore-vault'
+    SecretsFilter: '*'
+    RunAsPreJob: true
+
+- task: NuGetToolInstaller@1
+  inputs:
+    versionSpec: '4.4.1'
+
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: '$(solution)'
+    feedsToUse: 'select'
+
+- task: VSBuild@1
+  inputs:
+    solution: '$(solution)'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+- task: VSTest@2
+  inputs:
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: custom
+    custom: tool
+    arguments: install --global AzureSignTool
+  displayName: "Install Azure SignTool"
+  
+- task: DotNetCoreCLI@2
+  inputs:
+    command: custom
+    custom: tool
+    arguments: update --global AzureSignTool
+  displayName: "Update Azure SignTool"
+      
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: '$(System.DefaultWorkingDirectory)'
+    Contents: '**'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+- task: CmdLine@2
+  displayName: 'Sign artifact test.txt file  global AzureSignTool'
+  inputs:
+    script: |
+      ls
+      echo "osidhaosidaosidj"
+      echo $(SigningVaultURL)
+      sudo chmod +x test.exe
+      azuresigntool sign -kvu "$(SigningVaultURL)" -kvi "$(CONN1242-app-client-id)" -kvt "$(CONN1242-app-tenant-id)" -kvs "$(CONN1242-client-secret-value-password)" -kvc "$(SigningCertName)" -v  $(Build.ArtifactStagingDirectory)\hello-world-api\bin\Release\netcoreapp2.0\hello-world-api.dll
+      
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'

@@ -1,0 +1,75 @@
+trigger:
+- none
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  solution: '**/*.sln'
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+steps:
+- task: AzureKeyVault@2
+  inputs:
+    azureSubscription: 'Kyndryl course Modernops'
+    KeyVaultName: 'petstore-vault'
+    SecretsFilter: '*'
+    RunAsPreJob: true
+- task: Docker@2
+  inputs:
+    containerRegistry: 'demoappContainerRegistery'
+    repository: 'demoapp'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
+
+
+- task: GoTool@0
+  inputs:
+    version: '1.10'
+
+- task: CmdLine@2
+  inputs:
+    script: 'go install github.com/sigstore/cosign/v2/cmd/cosign@latest'
+- task: CmdLine@2
+  displayName: Generate Key Pairs
+  inputs:
+    script: |
+      export AZURE_CLIENT_ID=$KVADMIN_CLIENTID
+      export AZURE_CLIENT_SECRET=$KVADMIN_SECRET
+
+      cosign generate-key-pair -kms "azurekms://$KVNAME.vault.azure.net/cosignkey"
+- task: CmdLine@2
+  displayName: Verify Key Generation
+  inputs:
+    script: |
+      az keyvault key show --name cosignkey --vault-name $KVNAME
+- task: Docker@2
+  inputs:
+    containerRegistry: 'demoappContainerRegistery'
+    repository: '<IMAGE_NAME>'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
+- task: CmdLine@2
+  inputs:
+    script: |
+      export AZURE_CLIENT_ID=$KVSIGNER_CLIENTID
+      export AZURE_CLIENT_SECRET=$KVSIGNER_SECRET
+      cosign sign -key "azurekms://$KVNAME.vault.azure.net/cosignkey" $ACRHOST/<IMAGE_NAME>:v1
+- task: CmdLine@2
+  inputs:
+    script: |
+      export AZURE_CLIENT_ID=$KVREADER_CLIENTID
+      export AZURE_CLIENT_SECRET=$KVREADER_SECRET
+      cosign verify -key "azurekms://$KVNAME.vault.azure.net/cosignkey" $ACRHOST/IMAGE_NAME:v1
+- task: CopyFiles@2
+  inputs:
+    SourceFolder: '$(System.DefaultWorkingDirectory)'
+    Contents: '**'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'

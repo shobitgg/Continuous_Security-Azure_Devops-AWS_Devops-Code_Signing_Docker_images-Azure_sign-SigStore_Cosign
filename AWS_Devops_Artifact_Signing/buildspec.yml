@@ -1,0 +1,35 @@
+---
+version: 0.2
+
+phases:
+
+  install:
+    runtime-versions:
+      golang: 1.18
+    commands:
+      - yum update -y --skip-broken
+      - yum -y install curl jq python3-pip python3-dev perl-Digest-SHA --skip-broken
+      - pip3 install --upgrade awscli
+      - export PATH=$PWD/:$PATH
+      - sudo rm -rf /usr/local/go
+      - wget https://go.dev/dl/go1.19.5.linux-amd64.tar.gz
+      - sudo tar -C /usr/local -xvzf go1.19.5.linux-amd64.tar.gz
+      - export PATH=/usr/local/go/bin:$PATH
+      - go help
+      - go version
+      - go install github.com/sigstore/cosign/cmd/cosign@latest
+
+  pre_build:
+    commands:
+      - make ecr_auth
+  build:
+    commands:
+      - make docker_build
+
+  post_build:
+    commands:
+      - make docker_push
+      - make sign
+      - make verify
+artifacts:
+  files: build.json
